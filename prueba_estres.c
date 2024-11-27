@@ -8,7 +8,7 @@ void generar_stress() {
     for (int i = 0; i < NUM_PROCESOS; i++) {
         pid_t pid = fork();
         if (pid == 0) {
-            // Proceso hijo simula una tarea de estrés (por ejemplo, un cálculo intensivo)
+            // Proceso hijo simula una tarea de estrés 
             for (long j = 0; j < 1000000000; j++);
             exit(0);
         }
