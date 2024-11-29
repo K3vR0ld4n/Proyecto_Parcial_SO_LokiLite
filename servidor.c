@@ -3,11 +3,19 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <curl/curl.h>
+
 
 #define PORT 8080
 #define BUF_SIZE 4096
-#define INITIAL_THRESHOLD 1000
+#define INITIAL_THRESHOLD 50
 #define MAX_ALERTS 5
+
+//Twilio data
+#define ACCOUNT_SID ""
+#define AUTH_TOKEN ""
+#define TWILIO_WHATSAPP_NUMBER "whatsapp:+14155238886"
+#define RECIPIENT_WHATSAPP_NUMBER "whatsapp:+"
 
 typedef struct {
     char service_name[50];
@@ -20,7 +28,56 @@ ServiceData *servicios = NULL;
 int num_servicios = 0;
 
 void enviar_alerta(const char *service_name, int total_logs, int threshold, int alerta_numero) {
-    printf("ALERTA #%d: Servicio: %s | Total Logs: %d | Umbral Superado: %d\n", alerta_numero, service_name, total_logs, threshold);
+    CURL *curl;
+    CURLcode res;
+
+    // Inicializar libcurl
+    curl_global_init(CURL_GLOBAL_ALL);
+    curl = curl_easy_init();
+
+    if(curl) {
+        // Codificar los números con curl_easy_escape para evitar problemas con caracteres especiales como '+'
+        char *encoded_from = curl_easy_escape(curl, TWILIO_WHATSAPP_NUMBER, 0);
+        char *encoded_to = curl_easy_escape(curl, "whatsapp:+593992133544", 0);
+
+        // Configurar la URL y el método POST
+        curl_easy_setopt(curl, CURLOPT_URL, "https://api.twilio.com/2010-04-01/Accounts/" ACCOUNT_SID "/Messages.json");
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+
+        char message[1024];
+        snprintf(message, sizeof(message), "ALERTA #%d: El Servicio '%s' con un Total de Logs de %d a superado el Umbral actual de %d", alerta_numero, service_name, total_logs, threshold);
+    
+        // Configurar los datos del mensaje
+        char postfields[2048];  // Incrementar el tamaño del buffer para mayor seguridad
+        snprintf(postfields, sizeof(postfields), "From=%s&To=%s&Body=%s", 
+                 encoded_from, encoded_to, message);
+
+        // Imprimir los datos para depuración
+        printf("%s \n", postfields);
+
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields);
+
+        // Configurar las credenciales
+        curl_easy_setopt(curl, CURLOPT_USERPWD, ACCOUNT_SID ":" AUTH_TOKEN);
+
+        // Realizar la solicitud
+        res = curl_easy_perform(curl);
+
+        // Comprobar si hubo errores
+        if(res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        }
+
+        // Limpiar
+        curl_easy_cleanup(curl);
+        curl_free(encoded_from);  // Liberar memoria de curl_easy_escape
+        curl_free(encoded_to);    // Liberar memoria de curl_easy_escape
+    } else {
+        fprintf(stderr, "curl_easy_init() failed\n");
+    }
+
+    // Limpiar recursos globales de libcurl
+    curl_global_cleanup();
 }
 
 int encontrar_indice_servicio(const char *service_name) {
