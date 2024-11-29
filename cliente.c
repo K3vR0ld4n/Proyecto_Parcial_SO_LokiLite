@@ -59,7 +59,7 @@ void ejecutar_agente_y_obtener_dashboard(char *dashboard, char *argv[], int argc
 
         close(pipefd[0]);  
         wait(NULL);  
-}
+}}
 
 // Función que envía el dashboard al servidor
 void enviar_dashboard_al_servidor(char *dashboard) {
