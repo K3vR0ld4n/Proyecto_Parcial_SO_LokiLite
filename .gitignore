@@ -1,0 +1,49 @@
+# Compiled object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.stackdump
+*.vscode
+
+# Visual Studio Code specific files
+.vscode/
+*.code-workspace
+
+# Editor directories and files
+*~
+.*.swp
+.*.swo
+.DS_Store
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Other
+.idea/
+*.iml
