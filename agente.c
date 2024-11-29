@@ -6,6 +6,8 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <fcntl.h>  // Para O_NONBLOCK
+#include <errno.h>  // Para errno y EAGAIN
 
 #define INTERVALO_ACTUALIZACION 5  
 #define MAX_PRIORITY_LEVELS 7   
@@ -22,8 +24,6 @@ const char *priority_levels[] = { "alert", "crit", "err", "warning", "notice", "
 
 // Función que imprime el dashboard en la terminal
 void print_dashboard(ServiceData *servicios, int num_servicios) {
-    printf("\033[2J"); // Limpiar la pantalla
-    printf("\033[H");  // Mover el cursor al inicio
     printf("========= Dashboard de Monitoreo =========\n");
     printf("%-20s | %5s | %5s | %5s | %5s | %5s | %5s | %5s\n", "Servicio", "ALERT", "CRIT", "ERR", "WARN", "NOTE", "INFO", "DEBUG");
     printf("-------------------------------------------------------------------------------\n");
@@ -58,6 +58,7 @@ void* service_handler(void* arg) {
     int pipefd[2];  
     pid_t pid;
     char buffer[1024];
+    ssize_t bytes_read;
 
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
         if (pipe(pipefd) == -1) {
@@ -77,13 +78,31 @@ void* service_handler(void* arg) {
             exit(EXIT_SUCCESS);
         } else {  // Proceso padre
             close(pipefd[1]);  
-            while (read(pipefd[0], buffer, sizeof(buffer)) > 0) {
-                pthread_mutex_lock(&mutex);  // Bloquear acceso a los contadores
-                service_data->priority_count[i]++; 
-                pthread_mutex_unlock(&mutex);  // Desbloquear acceso a los contadores
+
+            // Configura la lectura no bloqueante de la tubería
+            int flags = fcntl(pipefd[0], F_GETFL, 0);
+            fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+
+            while (1) {
+                bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1);
+                if (bytes_read > 0) {
+                    pthread_mutex_lock(&mutex);  // Bloquear acceso a los contadores
+                    service_data->priority_count[i]++; 
+                    pthread_mutex_unlock(&mutex);  // Desbloquear acceso a los contadores
+
+                    // Para depuración, muestra los datos leídos
+                    buffer[bytes_read] = '\0';  // Asegurar terminación de cadena
+                    printf("Leído (%s, %s): %s\n", service_data->service_name, priority_levels[i], buffer);
+                } else if (bytes_read == -1 && errno != EAGAIN) {
+                    perror("read");
+                    break;
+                }
+
+                usleep(500000); // Reducimos la espera para dar tiempo a los procesos a generar datos
             }
 
             close(pipefd[0]);  
+            wait(NULL);  // Espera a que el proceso hijo termine
         }
     }
     return NULL;
@@ -106,6 +125,7 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < num_servicios; i++) {
         strncpy(servicios[i].service_name, argv[i + 1], 50);
+        servicios[i].service_name[49] = '\0'; // Asegurar la terminación en nulo
         memset(servicios[i].priority_count, 0, sizeof(int) * MAX_PRIORITY_LEVELS);
     }
 
@@ -113,6 +133,24 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < num_servicios; i++) {
         pthread_create(&threads[i], NULL, service_handler, (void *)&servicios[i]);
+    }
+
+    // En lugar de `sleep(3)`, usamos un mecanismo de sincronización
+    // Esperamos a que los hilos se inicien antes de imprimir el dashboard
+
+    int all_threads_ready = 0;
+    while (!all_threads_ready) {
+        all_threads_ready = 1;
+        for (int i = 0; i < num_servicios; i++) {
+            if (servicios[i].priority_count[0] == 0 && servicios[i].priority_count[1] == 0 && 
+                servicios[i].priority_count[2] == 0 && servicios[i].priority_count[3] == 0 && 
+                servicios[i].priority_count[4] == 0 && servicios[i].priority_count[5] == 0 && 
+                servicios[i].priority_count[6] == 0) {
+                all_threads_ready = 0;
+                break;
+            }
+        }
+        usleep(100000);  // Espera breve para no consumir muchos recursos
     }
 
     // Actualizar el dashboard cada INTERVALO_ACTUALIZACION segundos
