@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <regex.h>
+#include <pthread.h>
+#include <semaphore.h>
 
 #define MAX_PRIORITY_LEVELS 7  
 #define BUF_SIZE 4096
@@ -13,12 +15,18 @@
 // Estructura para almacenar los datos de cada servicio
 typedef struct {
     char service_name[50];
-    int priority_count[MAX_PRIORITY_LEVELS];  
+    int priority_count[MAX_PRIORITY_LEVELS];  // Contador para cada nivel de prioridad
 } ServiceData;
 
 const char *priority_levels[] = { "alert", "crit", "err", "warning", "notice", "info", "debug" };
 
-// Detectar líneas de logs válidas
+// Mutex para proteger los contadores de logs
+pthread_mutex_t mutex;
+
+// Semáforo para controlar el número de procesos hijos concurrentes
+sem_t sem;
+
+// Detectar líneas de logs válidas usando regex
 int es_log_valido(const char *linea) {
     regex_t regex;
     int reti;
@@ -55,16 +63,21 @@ void contar_logs_por_prioridad(ServiceData *service_data, int priority_level) {
     }
 
     if (pid == 0) {  // Proceso hijo
-        close(pipefd[0]);  
+        close(pipefd[0]);  // Cerrar el lado de lectura en el hijo
 
-        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDOUT_FILENO);  // Redirigir la salida estándar al pipe
         close(pipefd[1]);
 
+        // Ejecutar journalctl para el servicio y nivel de prioridad
         execlp("journalctl", "journalctl", "-u", service_data->service_name, "-p", priority_levels[priority_level], "--no-pager", NULL);
         perror("exec failed");
         exit(EXIT_FAILURE);
     } else {  // Proceso padre
-        close(pipefd[1]);  
+        close(pipefd[1]);  // Cerrar el lado de escritura en el padre
+
+        // Esperar a que el semáforo nos permita continuar
+        sem_wait(&sem);
+
         FILE *stream = fdopen(pipefd[0], "r");
         int log_count = 0;
 
@@ -74,12 +87,18 @@ void contar_logs_por_prioridad(ServiceData *service_data, int priority_level) {
             }
         }
 
+        // Proteger el acceso a los contadores con mutex
+        pthread_mutex_lock(&mutex);
         service_data->priority_count[priority_level] = log_count;
-        
+        pthread_mutex_unlock(&mutex);
+
         fclose(stream);
         close(pipefd[0]);
 
-        wait(NULL);
+        wait(NULL);  // Esperar a que el proceso hijo termine
+
+        // Liberar el semáforo para permitir que otro proceso hijo inicie
+        sem_post(&sem);
     }
 }
 
@@ -91,6 +110,8 @@ void print_dashboard(ServiceData *servicios, int num_servicios) {
     printf("%-20s | %5s | %5s | %5s | %5s | %5s | %5s | %5s\n", 
         "Servicio", "ALERT", "CRIT", "ERR", "WARN", "NOTE", "INFO", "DEBUG");
     printf("-------------------------------------------------------------------------------\n");
+
+    // Imprimir los datos de los logs
     for (int i = 0; i < num_servicios; i++) {
         printf("%-20s | %5d | %5d | %5d | %5d | %5d | %5d | %5d\n", 
             servicios[i].service_name, 
@@ -111,8 +132,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    int num_servicios = argc - 1;  
+    int num_servicios = argc - 1;  // Número de servicios que se pasan como argumento
 
+    // Crear memoria compartida para los datos de los servicios
     ServiceData *servicios = mmap(NULL, sizeof(ServiceData) * num_servicios, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (servicios == MAP_FAILED) {
         perror("mmap failed");
@@ -124,6 +146,12 @@ int main(int argc, char *argv[]) {
         strncpy(servicios[i].service_name, argv[i + 1], 50);
         memset(servicios[i].priority_count, 0, sizeof(int) * MAX_PRIORITY_LEVELS);
     }
+
+    // Inicializar el mutex
+    pthread_mutex_init(&mutex, NULL);
+
+    // Inicializar el semáforo con un valor de 3 (puedes ajustar este valor según el número de procesos concurrentes permitidos)
+    sem_init(&sem, 0, 3);  // Limitar a 3 procesos concurrentes
 
     // Monitorear cada servicio y contar logs por prioridad
     for (int i = 0; i < num_servicios; i++) {
@@ -137,6 +165,10 @@ int main(int argc, char *argv[]) {
 
     // Liberar la memoria compartida
     munmap(servicios, sizeof(ServiceData) * num_servicios);
+
+    // Destruir el mutex y semáforo
+    pthread_mutex_destroy(&mutex);
+    sem_destroy(&sem);
 
     return 0;
 }
