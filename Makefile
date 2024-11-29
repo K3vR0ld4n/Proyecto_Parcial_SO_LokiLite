@@ -17,7 +17,7 @@ cliente: $(SRC_CLIENTE)
 	$(CC) $(CFLAGS) -o cliente $(SRC_CLIENTE)
 
 servidor: $(SRC_SERVIDOR)
-	$(CC) $(CFLAGS) -o servidor $(SRC_SERVIDOR)
+	$(CC) $(CFLAGS) -o servidor $(SRC_SERVIDOR) -lcurl
 
 prueba_estres: $(SRC_PRUEBA_ESTRES)
 	$(CC) $(CFLAGS) -o prueba_estres $(SRC_PRUEBA_ESTRES)
