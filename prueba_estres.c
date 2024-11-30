@@ -15,7 +15,7 @@ void crear_servicio_systemd() {
     "Description=Servicio de prueba de estrés para generar logs\n"
     "\n"
     "[Service]\n"
-    "ExecStart=/bin/bash -c '/usr/bin/logger -t prueba_stress -p local0.alert \"Log generado con prioridad ALERT\"; /usr/bin/logger -t prueba_stress -p local0.crit \"Log generado con prioridad CRIT\"; /usr/bin/logger -t prueba_stress -p local0.err \"Log generado con prioridad ERR\"; /usr/bin/logger -t prueba_stress -p local0.warning \"Log generado con prioridad WARNING\"; /usr/bin/logger -t prueba_stress -p local0.notice \"Log generado con prioridad NOTICE\"; /usr/bin/logger -t prueba_stress -p local0.info \"Log generado con prioridad INFO\"; /usr/bin/logger -t prueba_stress -p local0.debug \"Log generado con prioridad DEBUG\"'\n"
+    "ExecStart=/bin/bash -c '/usr/bin/logger -t prueba_estres -p local0.alert \"Log generado con prioridad ALERT\"; /usr/bin/logger -t prueba_estres -p local0.crit \"Log generado con prioridad CRIT\"; /usr/bin/logger -t prueba_estres -p local0.err \"Log generado con prioridad ERR\"; /usr/bin/logger -t prueba_estres -p local0.warning \"Log generado con prioridad WARNING\"; /usr/bin/logger -t prueba_estres -p local0.notice \"Log generado con prioridad NOTICE\"; /usr/bin/logger -t prueba_estres -p local0.info \"Log generado con prioridad INFO\"; /usr/bin/logger -t prueba_estres -p local0.debug \"Log generado con prioridad DEBUG\"'\n"
     "Restart=always\n"
     "RestartSec=1\n"
     "User=root\n"
@@ -27,7 +27,7 @@ void crear_servicio_systemd() {
     "WantedBy=multi-user.target\n";
 
     // Crear el archivo de servicio en /etc/systemd/system
-    FILE *service_file = fopen("/etc/systemd/system/prueba_stress.service", "w");
+    FILE *service_file = fopen("/etc/systemd/system/prueba_estres.service", "w");
     if (!service_file) {
         perror("No se pudo crear el archivo de servicio");
         exit(EXIT_FAILURE);
@@ -37,8 +37,8 @@ void crear_servicio_systemd() {
     fclose(service_file);
 
     system("systemctl daemon-reload");
-    system("systemctl enable prueba_stress.service");
-    system("systemctl start prueba_stress.service");
+    system("systemctl enable prueba_estres.service");
+    system("systemctl start prueba_estres.service");
 }
 
 // Función para generar logs con niveles de prioridad aleatorios
@@ -54,7 +54,7 @@ void *generar_logs(void *arg) {
         strftime(message, sizeof(message), "%Y-%m-%d %H:%M:%S", tm_info);
         int priority_index = rand() % 7;
         char command[512];
-        snprintf(command, sizeof(command), "logger -t prueba_stress -p local0.%s \"%s Generando log de prueba\"", priorities[priority_index], message);
+        snprintf(command, sizeof(command), "logger -t prueba_estres -p local0.%s \"%s Generando log de prueba\"", priorities[priority_index], message);
         system(command);  
 
         usleep(500000);  // Pausa de 500ms entre logs para evitar generar logs demasiado rápido
@@ -87,8 +87,8 @@ int main() {
     sleep(5);
 
     // Detener y deshabilitar el servicio después de la prueba
-    system("systemctl stop prueba_stress.service");
-    system("systemctl disable prueba_stress.service");
+    system("systemctl stop prueba_estres.service");
+    system("systemctl disable prueba_estres.service");
 
     printf("Prueba de estrés completada. Logs generados.\n");
 
